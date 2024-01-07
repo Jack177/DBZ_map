@@ -5,6 +5,7 @@ library(shiny)
 library(shinyWidgets)
 library(shinydashboard)
 library(dplyr)
+library(sf)
 library(leaflet)
 library(plotly)
 library(tidyr) # fonction gather, drop_na
@@ -19,7 +20,13 @@ library(DT)
 
 
 # Importation 
-
+shp_PULSE <- sf::st_read("data/shapefile/PULSE_shp/FAO_GAUL2014_WGS1984_PanEurope_2022.shp") %>% 
+  select(geometry, ADM0_NAME) %>% 
+  rename(coutry_name = ADM0_NAME)
+shp_WESTBEES <- sf::st_read("data/shapefile/WESTBEES_shp/base mediterranean hotspot.shp") %>% 
+  select(geometry, adm0_name) %>% 
+  rename(coutry_name = adm0_name) %>% 
+  st_zm() # Retire la composante Z (altitude), qui fait buguer leaflet
 
 SCS <- readxl::read_excel("./data/peyresq_2022-2023.xlsx")
 
@@ -271,7 +278,7 @@ species_choices <- setNames(grouped_species$species, grouped_species$GENUS)
 
 
 ui <- navbarPage("Data Base Zoology: Interactive map of Wild bees", id="main",
-                 tabPanel("Map",
+                 tabPanel(title = "Map",
                           tags$div(
                             leafletOutput("beeMap", height=800),
                             style = "position:relative;",
@@ -323,8 +330,18 @@ server <- shinyServer(function(input, output) {
 
   output$beeMap <- renderLeaflet({
     leaflet(data = filteredData()) %>% # Utilise les données filtrées
-      setView(lng = 6.6, lat = 44, zoom = 8) %>% 
-      addTiles() %>%
+      setView(lng = 6.6, lat = 44, zoom = 8) %>% # Vue de départ
+      addTiles() %>% # ajout OpenStreetMap (OSM)
+      addPolygons(data = shp_PULSE, 
+                  color = "black", # Couleur des contours
+                  weight = 2,       # Épaisseur des contours (en pixels)
+                  fillColor = "darkred",
+                  group = "PULSE") %>%  # Couleur de remplissage des polygones
+      addPolygons(data = shp_WESTBEES,
+                  color = "black", # Couleur des contours
+                  weight = 2,       # Épaisseur des contours (en pixels)
+                  fillColor = "#0090a8",
+                  group = "WESTBEES") %>%  # Couleur de remplissage des polygones
       addCircleMarkers(lng = ~LONGITUDE_DECIMAL, lat = ~LATITUDE_DECIMAL, 
                        radius = 5, popup = ~popup,
                        color = ~pal(category),
@@ -332,8 +349,11 @@ server <- shinyServer(function(input, output) {
       addLegend(pal = pal, values = ~category, opacity = 1, title = "IUCN category") %>%
       addEasyButton(easyButton(
         icon = "fa-crosshairs", title = "Center view", # image bouton pour centrer
-        onClick = JS("function(btn, map){map.setView([44,  6.8], 10)}")
-      ))
+        onClick = JS("function(btn, map){map.setView([44,  6.8], 10)}") # Vue bouton centrer
+      )) %>%
+      addLayersControl(overlayGroups = c("PULSE", "WESTBEES"),
+                       options = layersControlOptions(collapsed = FALSE)) %>% # Contrôle pour afficher/masquer les shapefiles
+      hideGroup(c("PULSE", "WESTBEES")) # par défaut masquer les shapefiles
   })
   
   
