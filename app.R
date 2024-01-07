@@ -5,9 +5,12 @@ library(shiny)
 library(shinyWidgets)
 library(shinydashboard)
 library(dplyr)
+
 library(sf)
 library(leaflet)
-library(plotly)
+#library(plotly)
+library(rmapshaper) # réduis la précision (et le poids) du shapefile
+
 library(tidyr) # fonction gather, drop_na
 library(ggplot2)
 library("readxl")
@@ -18,19 +21,29 @@ library(DT)
 # setwd("app/")
 # source("start_app.R")
 
+# Importation  ----
+## Shapefile ----
+### PULSE shp ----
+# Fichier originel et méthode pour réduire la taille
+# shp_PULSE <- sf::st_read("data/shapefile/PULSE_shp/FAO_GAUL2014_WGS1984_PanEurope_2022.shp") %>%
+#   select(geometry, ADM0_NAME) %>%
+#   rename(coutry_name = ADM0_NAME) %>%
+#   ms_simplify(keep = 0.09) %>%
+#   st_write("data/shapefile/shp_PULSE(compressed).shp")
 
-# Importation 
-shp_PULSE <- sf::st_read("data/shapefile/PULSE_shp/FAO_GAUL2014_WGS1984_PanEurope_2022.shp") %>% 
-  select(geometry, ADM0_NAME) %>% 
-  rename(coutry_name = ADM0_NAME)
-shp_WESTBEES <- sf::st_read("data/shapefile/WESTBEES_shp/base mediterranean hotspot.shp") %>% 
-  select(geometry, adm0_name) %>% 
-  rename(coutry_name = adm0_name) %>% 
-  st_zm() # Retire la composante Z (altitude), qui fait buguer leaflet
+shp_PULSE <- sf::st_read("data/shapefile/PULSE_shp/shp_PULSE(compressed).shp")
+
+### WESTBEES shp ----
+# shp_WESTBEES <- sf::st_read("data/shapefile/WESTBEES_shp/base mediterranean hotspot.shp") %>%
+#   select(geometry, adm0_name) %>%
+#   rename(coutry_name = adm0_name) %>%
+#   st_zm() %>% # Retire la composante Z (altitude), qui fait buguer leaflet
+#   st_write("data/shp_WESTBEES.shp")
+
+shp_WESTBEES <- sf::st_read("data/shapefile/WESTBEES_shp/shp_WESTBEES.shp") 
 
 SCS <- readxl::read_excel("./data/peyresq_2022-2023.xlsx")
 
-getwd()
 
 # SP
 SCS <- SCS %>%
@@ -147,7 +160,7 @@ mutate(SCS,
        LATITUDE_text = round(SCS$LATITUDE_DECIMAL, digits = 2)) %>%
   select(SP, GENUS, SEX, LOCALITY, ALTITUDE, LATITUDE_DECIMAL, LONGITUDE_DECIMAL,LONGITUDE_text,LATITUDE_text, DATE_2, category) %>%
   drop_na(LATITUDE_DECIMAL) %>%
-  drop_na(SP) -> data
+  drop_na(SP) -> SCS
 
 
 # ui.R ----
@@ -280,13 +293,17 @@ species_choices <- setNames(grouped_species$species, grouped_species$GENUS)
 ui <- navbarPage("Data Base Zoology: Interactive map of Wild bees", id="main",
                  tabPanel(title = "Map",
                           tags$div(
-                            leafletOutput("beeMap", height=800),
+                            leafletOutput("beeMap", height = 800),
                             style = "position:relative;",
                             tags$div(
                               style = "position:absolute; top:10px; left:50%; transform: translateX(-50%); z-index:1000;",
                               pickerInput("selectSpecies", "Select a species: ", choices = c(species_choices),
                                           selected = "Megachile parietina",
                                           options = list(`live-search` = TRUE))
+                            ),
+                            tags$div(
+                              style = "position:absolute; bottom: 10px; left: 50%; transform: translateX(-50%); z-index:1000;",
+                              sliderInput("jitterInput", "Jitter Amount", min = 0, max = 0.0005, value = 0.0005, step = 0.0001)
                             )
                           )
                  ),
@@ -311,7 +328,7 @@ server <- shinyServer(function(input, output) {
     '<br><strong>Category:</strong> ', category, 
     '<br><strong>Altitude:</strong> ', ALTITUDE, "m" )
   ) 
-  
+
   filteredData <- reactive({
     if ("Megachile parietina" == input$selectSpecies) {
       filter(SCS, SP == "Megachile parietina")
@@ -321,18 +338,52 @@ server <- shinyServer(function(input, output) {
     }
   })
 
-  
-  
+
   pal <- colorFactor(pal = c("#B22123", "#F19101", "#F3E61F","#7EB02D", "#54784A", "#CCC9C0"), domain = c("CR", "EN", "VU", "NT", "LC", "DD"))
 
-  
+
+  # initial_map <- leaflet() %>%
+  #   setView(lng = 6.6, lat = 44, zoom = 8) %>%
+  #   addTiles()
+  # 
+  # # Utilisez leafletProxy pour mettre à jour les marqueurs
+  # output$beeMap <- renderLeaflet({
+  #   leaflet(data = filteredData()) %>%
+  #     setView(lng = 6.6, lat = 44, zoom = 8) %>%
+  #     addTiles() %>%
+  #     addCircleMarkers(data = filteredData(),
+  #                      lng = ~ifelse(input$jitterInput == 0, LONGITUDE_DECIMAL, jitter(LONGITUDE_DECIMAL, amount = as.numeric(input$jitterInput))),
+  #                      lat = ~ifelse(input$jitterInput == 0, LATITUDE_DECIMAL, jitter(LATITUDE_DECIMAL, amount = as.numeric(input$jitterInput))),
+  #                      radius = 5,
+  #                      popup = ~popup,
+  #                      color = ~pal(category),
+  #                      stroke = FALSE,
+  #                      fillOpacity = 0.8)
+  # })
+  # 
+  # observeEvent(input$jitterInput, {
+  #   proxy <- leafletProxy("beeMap")
+  # 
+  #   jittered_lat <- if (input$jitterInput == 0) filteredData()$LATITUDE_DECIMAL else jitter(filteredData()$LATITUDE_DECIMAL, amount = as.numeric(input$jitterInput))
+  #   jittered_lon <- if (input$jitterInput == 0) filteredData()$LONGITUDE_DECIMAL else jitter(filteredData()$LONGITUDE_DECIMAL, amount = as.numeric(input$jitterInput))
+  # 
+  #   proxy %>%
+  #     clearMarkers() %>%
+  #     addCircleMarkers(lng = jittered_lon, lat = jittered_lat,
+  #                      radius = 5, popup = ~popup,
+  #                      color = ~pal(category),
+  #                      stroke = FALSE, fillOpacity = 0.8)
+  # })
   
 
   output$beeMap <- renderLeaflet({
+    jittered_lat <- if (input$jitterInput == 0) filteredData()$LATITUDE_DECIMAL else jitter(filteredData()$LATITUDE_DECIMAL, amount = as.numeric(input$jitterInput))
+    jittered_lon <- if (input$jitterInput == 0) filteredData()$LONGITUDE_DECIMAL else jitter(filteredData()$LONGITUDE_DECIMAL, amount = as.numeric(input$jitterInput))
+
     leaflet(data = filteredData()) %>% # Utilise les données filtrées
       setView(lng = 6.6, lat = 44, zoom = 8) %>% # Vue de départ
       addTiles() %>% # ajout OpenStreetMap (OSM)
-      addPolygons(data = shp_PULSE, 
+      addPolygons(data = shp_PULSE,
                   color = "black", # Couleur des contours
                   weight = 2,       # Épaisseur des contours (en pixels)
                   fillColor = "darkred",
@@ -342,7 +393,7 @@ server <- shinyServer(function(input, output) {
                   weight = 2,       # Épaisseur des contours (en pixels)
                   fillColor = "#0090a8",
                   group = "WESTBEES") %>%  # Couleur de remplissage des polygones
-      addCircleMarkers(lng = ~LONGITUDE_DECIMAL, lat = ~LATITUDE_DECIMAL, 
+      addCircleMarkers(lng = ~jittered_lon, lat = ~jittered_lat,
                        radius = 5, popup = ~popup,
                        color = ~pal(category),
                        stroke = FALSE, fillOpacity = 0.8) %>%
