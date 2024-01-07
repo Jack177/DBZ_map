@@ -170,7 +170,7 @@ server <- shinyServer(function(input, output, session) {
     leaflet(data = filteredData()) %>% # Utilise les données filtrées
       setView(lng = 6.6, lat = 44, zoom = 8) %>% # Vue de départ
       addTiles(group = "OSM (default)") %>% # ajout OpenStreetMap (OSM)
-      addProviderTiles(providers$Jawg.Light, group = "Light") %>%
+      addProviderTiles(providers$Jawg.Light, group = "Light") %>% # ajout d'autres fonds de cartes : http://leaflet-extras.github.io/leaflet-providers/preview/index.html
       addProviderTiles(providers$OpenTopoMap, group = "Relief topo") %>%
       addProviderTiles(providers$Esri.WorldImagery, group = "Relief satelitte") %>%
       addProviderTiles(providers$Esri.WorldTerrain, group = "Relief white") %>%
@@ -184,7 +184,7 @@ server <- shinyServer(function(input, output, session) {
                   weight = 2,       # Épaisseur des contours (en pixels)
                   fillColor = "#0090a8",
                   group = "WESTBEES") %>%  # Couleur de remplissage des polygones
-      addCircleMarkers(lng = ~jittered_lon, lat = ~jittered_lat,
+      addCircleMarkers(lng = ~jittered_lon, lat = ~jittered_lat, # est-ce que j'ajoute des points/clusters ? https://rstudio.github.io/leaflet/markers.html
                        radius = 5, popup = ~popup,
                        color = ~pal(category),
                        stroke = FALSE, fillOpacity = 0.8) %>%
