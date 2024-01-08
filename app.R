@@ -15,6 +15,7 @@ library(tidyr) # fonction gather, drop_na
 library(ggplot2)
 library("readxl")
 library(DT)
+#library(data.table)
 
 
 # start_app.R ----
@@ -54,14 +55,39 @@ library(DT)
 
 # ui.R ----
 ## new ui.R ----   
-# Supprimer les lignes avec des valeurs manquantes dans GENUS ou SP
-SCS <- readxl::read_excel("./data/SCS_clean.xlsx")
-menuDeroulant <- na.omit(SCS[c("GENUS", "SP")])
+# # Supprimer les lignes avec des valeurs manquantes dans GENUS ou TAXON
+# df <- readxl::read_excel("./data/test_template2.xlsx")
+# #df[, GENUS := gsub(" .*", "", TAXON)]
+# df$GENUS <- gsub(" .*", "", df$TAXON)
+# 
+# df$LATITUDE  <- as.numeric(df$LATITUDE_PRIVACY)
+# df$LONGITUDE <- as.numeric(df$LONGITUDE_PRIVACY)
+# # Ajout des catégories IUCN
+# IUCN <- readxl::read_excel("./data/EU_Bees_list_and_country_records_2023_05_12.xlsx", sheet = "Full data")
+# df$category <- IUCN$RL_EU_2015[match(df$TAXON, IUCN$internal_name)]
+# 
+# 
+# df <- mutate(df, popup=paste0(
+#   '<strong>Specis: </strong>', TAXON,
+#   '<br><strong>ID:</strong> ', REFERENCE_CODE,
+#   '<br><strong>Determinator:</strong> ', DETERMINATOR,
+#   '<br><strong>Validator:</strong> ', VALIDATOR,
+#   '<br><strong>Flower:</strong> ', PLANT_TAXA,
+#   '<br><strong>Year:</strong> ', YEAR_2,
+#   '<br><strong>Month:</strong> ', MONTH_2,
+#   '<br><strong>N =</strong> ', NUMBER_OF_SPECIMENS_2,
+#   '<br><strong>Locality:</strong> ', LOCALITY,
+#   '<br><strong>Privacy:</strong> ', PRIVACY)
+# )
+# writexl::write_xlsx(df, "./data/test_template2_clean.xlsx")
+df <- readxl::read_excel("./data/test_template2_clean.xlsx")
+
 # Générer les choix pour le menu déroulant
-genus_choices <- unique(menuDeroulant$GENUS)
-grouped_species <- SCS %>% 
+#menuDeroulant <- na.omit(df[c("GENUS", "TAXON")])
+#genus_choices <- unique(df[c("GENUS", "TAXON")]) 
+grouped_species <- df %>% 
   group_by(GENUS) %>% 
-  summarize(species = list(unique(SP)))
+  summarize(species = list(unique(TAXON)))
 
 species_choices <- setNames(grouped_species$species, grouped_species$GENUS)
 
@@ -84,7 +110,7 @@ ui <- dashboardPage(
       pickerInput(inputId = "selectSpecies", label = tags$span(tags$img(src = "bee.png", height = "15px", width = "15px"),
         "Select a species:"
       ), choices = c(species_choices),
-                  selected = "Megachile parietina",
+                  selected = "Dasypoda crassicornis",
                   options = list(`live-search` = TRUE)),
       sliderInput("jitterInput", "Jitter Amount", min = 0, max = 0.0005, value = 0.0005, step = 0.0001)
     )
@@ -122,7 +148,7 @@ server <- shinyServer(function(input, output, session) {
     req(input$selectSpecies)  # S'assurer qu'une sélection est faite
     species <- input$selectSpecies
     # Charger uniquement les données pour l'espèce sélectionnée
-    subset_data <- subset(SCS, SP == species)
+    subset_data <- subset(df, TAXON == species)
     return(subset_data)
   })
   
@@ -162,18 +188,36 @@ server <- shinyServer(function(input, output, session) {
   #                      stroke = FALSE, fillOpacity = 0.8)
   # })
   
+  
+  leaflet() %>%
+    addTiles(
+      urlTemplate = "https://{s}.tile.thunderforest.com/{variant}/{z}/{x}/{y}.png?apikey={apikey}",
+      attribution = "&copy; <a href='http://www.thunderforest.com/'>Thunderforest</a>,  &copy; <a href='http://www.openstreetmap.org/copyright'>OpenStreetMap</a>",
+      options = tileOptions(variant='transport-dark', apikey = 'YOUR-KEY')
+    )
+  
 ## carte ----
   output$beeMap <- renderLeaflet({
-    jittered_lat <- if (input$jitterInput == 0) filteredData()$LATITUDE_DECIMAL else jitter(filteredData()$LATITUDE_DECIMAL, amount = as.numeric(input$jitterInput))
-    jittered_lon <- if (input$jitterInput == 0) filteredData()$LONGITUDE_DECIMAL else jitter(filteredData()$LONGITUDE_DECIMAL, amount = as.numeric(input$jitterInput))
+    jittered_lat <- if (input$jitterInput == 0) filteredData()$LATITUDE else jitter(filteredData()$LATITUDE, amount = as.numeric(input$jitterInput))
+    jittered_lon <- if (input$jitterInput == 0) filteredData()$LONGITUDE else jitter(filteredData()$LONGITUDE, amount = as.numeric(input$jitterInput))
 
     leaflet(data = filteredData()) %>% # Utilise les données filtrées
-      setView(lng = 6.6, lat = 44, zoom = 8) %>% # Vue de départ
+      setView(lng = 23, lat = 56, zoom = 4) %>% # Vue de départ
       addTiles(group = "OSM (default)") %>% # ajout OpenStreetMap (OSM)
-      addProviderTiles(providers$Jawg.Light, group = "Light") %>% # ajout d'autres fonds de cartes : http://leaflet-extras.github.io/leaflet-providers/preview/index.html
       addProviderTiles(providers$OpenTopoMap, group = "Relief topo") %>%
       addProviderTiles(providers$Esri.WorldImagery, group = "Relief satelitte") %>%
       addProviderTiles(providers$Esri.WorldTerrain, group = "Relief white") %>%
+      addProviderTiles(providers$NASAGIBS.ViirsEarthAtNight2012, group = "Night") %>%
+      addTiles(
+        urlTemplate = "https://{s}.tile.thunderforest.com/spinal-map/{z}/{x}/{y}.png?apikey={apikey}",
+        attribution = "&copy; <a href='http://www.thunderforest.com/'>Thunderforest</a>,  &copy; <a href='http://www.openstreetmap.org/copyright'>OpenStreetMap</a>",
+        options = tileOptions(variant='transport-dark', apikey = '8bc51695809642969ef460824c1f9608'),
+        group = "Scenario RCP 8.5") %>%
+      addTiles(
+        urlTemplate = "https://{s}.tile.thunderforest.com/mobile-atlas/{z}/{x}/{y}.png?apikey={apikey}",
+        attribution = '&copy; <a href="http://www.thunderforest.com/">Thunderforest</a>, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        options = tileOptions(variant='transport-dark', apikey = '8bc51695809642969ef460824c1f9608'),
+        group = "Light") %>%
       addPolygons(data = shp_PULSE,
                   color = "black", # Couleur des contours
                   weight = 2,       # Épaisseur des contours (en pixels)
@@ -191,10 +235,16 @@ server <- shinyServer(function(input, output, session) {
       addLegend(pal = pal, values = ~category, opacity = 1, title = "IUCN category") %>%
       addEasyButton(easyButton(
         icon = "fa-crosshairs", title = "Center view", # image bouton pour centrer
-        onClick = JS("function(btn, map){map.setView([44,  6.8], 10)}") # Vue bouton centrer
+        onClick = JS("function(btn, map){map.setView([56,  23], 4)}") # Vue bouton centrer
       )) %>%
       addLayersControl(
-        baseGroups = c("OSM (default)", "Light", "Relief topo", "Relief satelitte", "Relief white"),
+        baseGroups = c("OSM (default)", 
+                       "Light", 
+                       "Relief topo", 
+                       "Relief satelitte", 
+                       "Relief white",
+                       "Night",
+                       "Scenario RCP 8.5"),
         overlayGroups = c("PULSE", "WESTBEES"),
                        options = layersControlOptions(collapsed = TRUE)) %>% # Contrôle pour afficher/masquer les shapefiles
       htmlwidgets::onRender(" 
@@ -214,10 +264,11 @@ server <- shinyServer(function(input, output, session) {
   
 ## Data Table ----  
   output$beeData <-DT::renderDataTable(datatable(
-    filteredData(), 
-    extensions = 'Buttons',
+    select(filteredData(), -popup),
+    extensions = 'Buttons',options = list(ordering = FALSE, searching = FALSE, pageLength = 25),
     filter = "top" # Activer la recherche par colonne
   ))
+ 
   
  
 })
