@@ -214,13 +214,13 @@ server <- shinyServer(function(input, output, session) {
   
 ## Data Table ----  
   output$beeData <-DT::renderDataTable(datatable(
-    SCS, 
+    filteredData(), 
     extensions = 'Buttons',
     filter = "top" # Activer la recherche par colonne
   ))
   
-  
-})  
+ 
+})
 
 
 # Launch ShinyApp ----
