@@ -93,6 +93,11 @@ species_choices <- setNames(grouped_species$species, grouped_species$GENUS)
 
 
 
+
+species_choices <- setNames(grouped_species$species, grouped_species$GENUS)
+
+
+
 ui <- dashboardPage(
   dashboardHeader(title = "Wild Bees Dashboard"),
   dashboardSidebar(
@@ -196,13 +201,14 @@ server <- shinyServer(function(input, output, session) {
       options = tileOptions(variant='transport-dark', apikey = 'YOUR-KEY')
     )
   
-  ## carte ----
+
+## carte ----
   output$beeMap <- renderLeaflet({
     jittered_lat <- if (input$jitterInput == 0) filteredData()$LATITUDE else jitter(filteredData()$LATITUDE, amount = as.numeric(input$jitterInput))
     jittered_lon <- if (input$jitterInput == 0) filteredData()$LONGITUDE else jitter(filteredData()$LONGITUDE, amount = as.numeric(input$jitterInput))
-    
+
     leaflet(data = filteredData()) %>% # Utilise les données filtrées
-      setView(lng = 23, lat = 48, zoom = 4) %>% # Vue de départ
+      setView(lng = 23, lat = 56, zoom = 4) %>% # Vue de départ
       addTiles(group = "OSM (default)") %>% # ajout OpenStreetMap (OSM)
       addProviderTiles(providers$OpenTopoMap, group = "Relief topo") %>%
       addProviderTiles(providers$Esri.WorldImagery, group = "Relief satelitte") %>%
@@ -235,7 +241,7 @@ server <- shinyServer(function(input, output, session) {
       addLegend(pal = pal, values = ~category, opacity = 1, title = "IUCN category") %>%
       addEasyButton(easyButton(
         icon = "fa-crosshairs", title = "Center view", # image bouton pour centrer
-        onClick = JS("function(btn, map){map.setView([45,  23], 4)}") # Vue bouton centrer
+        onClick = JS("function(btn, map){map.setView([56,  23], 4)}") # Vue bouton centrer
       )) %>%
       addLayersControl(
         baseGroups = c("OSM (default)", 
@@ -248,7 +254,6 @@ server <- shinyServer(function(input, output, session) {
         overlayGroups = c("PULSE", "WESTBEES"),
         options = layersControlOptions(collapsed = TRUE)) %>% # Contrôle pour afficher/masquer les shapefiles
       htmlwidgets::onRender(" 
-        function() {
             $('.leaflet-control-layers-overlays').prepend('<label style=\"text-align:center\">Shapefile:</label>');
         }") %>%  # Ajout du titre de la légende
       hideGroup(c("PULSE", "WESTBEES")) # par défaut masquer les shapefiles
@@ -268,6 +273,7 @@ server <- shinyServer(function(input, output, session) {
     extensions = 'Buttons',options = list(ordering = FALSE, searching = FALSE, pageLength = 25),
     filter = "top" # Activer la recherche par colonne
   ))
+ 
   
   
   
