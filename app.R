@@ -20,6 +20,9 @@ library(ggplot2)
 library("readxl")
 #library("writexl")
 #library(Microsoft365R)
+# sql query : https://robotwealth.com/a-beginners-guide-to-using-duckdb-with-stock-price-data-in-r/
+# Read with Custom Delimiter from URL
+# https://sparkbyexamples.com/r-programming/read-csv-from-url-in-r/
 library(duckdb)
  
 library(DT)
@@ -32,26 +35,7 @@ library(DT)
 # source("start_app.R")
 
 # Importation  ----
-## Shapefile ----
-### PULSE shp ----
-# Fichier originel et méthode pour réduire la taille
-# shp_PULSE <- sf::st_read("data/shapefile/PULSE_shp/FAO_GAUL2014_WGS1984_PanEurope_2022.shp") %>%
-#   select(geometry, ADM0_NAME) %>%
-#   rename(coutry_name = ADM0_NAME) %>%
-#   ms_simplify(keep = 0.09) %>%
-#   st_write("data/shapefile/shp_PULSE(compressed).shp")
 
-# shp_PULSE <- sf::st_read("data/shapefile/PULSE_shp/shp_PULSE(compressed).shp")
-# 
-# ### WESTBEES shp ----
-# # shp_WESTBEES <- sf::st_read("data/shapefile/WESTBEES_shp/base mediterranean hotspot.shp") %>%
-# #   select(geometry, adm0_name) %>%
-# #   rename(coutry_name = adm0_name) %>%
-# #   st_zm() %>% # Retire la composante Z (altitude), qui fait buguer leaflet
-# #   st_write("data/shp_WESTBEES.shp")
-# 
-#  shp_WESTBEES <- sf::st_read("data/shapefile/WESTBEES_shp/shp_WESTBEES.shp") 
-# 
 #readxl::read_excel("./data/SCS_clean.xlsx")
 
 # start_app.R fin ----
@@ -89,17 +73,18 @@ library(DT)
 # )
 # writexl::write_xlsx(df, "./data/test_template2_clean.xlsx")
 
+# Note dbz.duckdb contient df
 # df <- readxl::read_excel("./data/test_template2_clean.xlsx")
-
-
+# load("2_batch_map_end_2.RData")
+# donnees_finales <- as.data.frame(donnees_finales)
 # test duckdb ----
 # https://wp.sciviews.org/sdd-umons2/?iframe=wp.sciviews.org/sdd-umons2-2023/big-data.html
-#con <- DBI::dbConnect(duckdb::duckdb(), dbname = "ma_db_test")
+
 
 ## Première fois : créer database à partir de df :
 # # Créer une connexion à DuckDB. Créer le fichier s'il n'existe pas.
-# con <- DBI::dbConnect(duckdb::duckdb(dbdir = "dbz.duckdb"))
-# DBI::dbWriteTable(con, "table_df", df)
+# con <- DBI::dbConnect(duckdb::duckdb(dbdir = "2_batch_map_end_2.duckdb"))
+# DBI::dbWriteTable(con, "table_df", donnees_finales)
 # # Liste des tables dans la base de données DuckDB
 # tables <- DBI::dbListTables(con)
 # print(tables)
@@ -111,7 +96,10 @@ library(DT)
 # DBI::dbDisconnect(con, shutdown = TRUE)
 
 
-con <- DBI::dbConnect(duckdb::duckdb(dbdir = "dbz.duckdb"))
+
+# 2_batch_map
+con <- DBI::dbConnect(duckdb::duckdb(dbdir = "2_batch_map_end_2.duckdb"))
+#con <- DBI::dbConnect(duckdb::duckdb(dbdir = "dbz.duckdb"))
 # Lie les données à la connexion pour les manipuler avec dplyr
 db <- tbl(con, "table_df")
 
@@ -119,7 +107,7 @@ db <- tbl(con, "table_df")
 
 grouped_species <- db %>%
   select(GENUS, TAXON) %>%
-  distinct() %>%
+  distinct() %>% # remplace unique(), impossible avec db
   group_by(GENUS) %>%
   summarize(species = list(TAXON)) %>%
   collect()
@@ -283,10 +271,14 @@ server <- shinyServer(function(input, output, session) {
       addCircleMarkers(lng = ~jittered_lon, lat = ~jittered_lat, # est-ce que j'ajoute des points/clusters ? https://rstudio.github.io/leaflet/markers.html
                        radius = 5, popup = ~popup,
                        color = ~pal(category),
-                       stroke = FALSE, fillOpacity = 0.5) %>%
+                       stroke = FALSE, fillOpacity = 0.5,
+                       group = "Dots") %>%
+      addMarkers(clusterOptions = markerClusterOptions(),
+                 lng = ~jittered_lon, lat = ~jittered_lat,
+                 group = "Markers") %>% 
       addLegend(pal = pal, values = ~category, opacity = 1, title = "IUCN category") %>%
       addEasyButton(easyButton(
-        icon = "fa-crosshairs", title = "Center view", # image bouton pour centrer
+        icon = "fa-globe", title = "Center view", # image bouton pour centrer
         onClick = JS("function(btn, map){map.setView([56,  23], 4)}") # Vue bouton centrer
       )) %>%
       addLayersControl(
@@ -297,12 +289,14 @@ server <- shinyServer(function(input, output, session) {
                        "Relief white",
                        "Night",
                        "Scenario RCP 8.5"),
-        overlayGroups = c("PULSE", "WESTBEES"),
-        options = layersControlOptions(collapsed = TRUE)) %>% # Contrôle pour afficher/masquer les shapefiles
+        overlayGroups = c("PULSE", "WESTBEES", "Dots", "Markers"),
+        options = layersControlOptions(collapsed = TRUE) # Contrôle pour réduire 
+      ) %>% 
+      hideGroup("Dots") %>% 
       htmlwidgets::onRender(" 
             $('.leaflet-control-layers-overlays').prepend('<label style=\"text-align:center\">Shapefile:</label>');
         }") %>%  # Ajout du titre de la légende
-      hideGroup(c("PULSE", "WESTBEES")) # par défaut masquer les shapefiles
+      hideGroup(c("WESTBEES")) # par défaut masquer les shapefiles
   })
   
   
@@ -316,7 +310,7 @@ server <- shinyServer(function(input, output, session) {
   ## Data Table ----  
   output$beeData <-DT::renderDataTable(datatable(
     select(filteredData(), -popup),
-    extensions = 'Buttons',options = list(ordering = FALSE, searching = FALSE, pageLength = 25),
+    extensions = 'Buttons',options = list(ordering = FALSE, searching = TRUE, pageLength = 11, scrollX = TRUE),
     filter = "top" # Activer la recherche par colonne
   ))
   
@@ -324,6 +318,8 @@ server <- shinyServer(function(input, output, session) {
   onStop(function() {
     DBI::dbDisconnect(con, shutdown = TRUE)
   })
+  
+  #gc() # clear the memory
  
   
 })
