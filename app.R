@@ -13,7 +13,15 @@ library(rmapshaper) # réduis la précision (et le poids) du shapefile
 
 library(tidyr) # fonction gather, drop_na
 library(ggplot2)
+
+# READ .xlsx files
+# xlsx est le plus lent, benchmark:
+# https://github.com/rifset/finding-fastest-excel-reader-in-r
 library("readxl")
+#library("writexl")
+#library(Microsoft365R)
+library(duckdb)
+ 
 library(DT)
 #library(data.table)
 
@@ -80,21 +88,56 @@ library(DT)
 #   '<br><strong>Privacy:</strong> ', PRIVACY)
 # )
 # writexl::write_xlsx(df, "./data/test_template2_clean.xlsx")
-df <- readxl::read_excel("./data/test_template2_clean.xlsx")
+
+# df <- readxl::read_excel("./data/test_template2_clean.xlsx")
+
+
+# test duckdb ----
+# https://wp.sciviews.org/sdd-umons2/?iframe=wp.sciviews.org/sdd-umons2-2023/big-data.html
+#con <- DBI::dbConnect(duckdb::duckdb(), dbname = "ma_db_test")
+
+## Première fois : créer database à partir de df :
+# # Créer une connexion à DuckDB. Créer le fichier s'il n'existe pas.
+# con <- DBI::dbConnect(duckdb::duckdb(dbdir = "dbz.duckdb"))
+# DBI::dbWriteTable(con, "table_df", df)
+# # Liste des tables dans la base de données DuckDB
+# tables <- DBI::dbListTables(con)
+# print(tables)
+# # Liste des colonnes dans la table "table_df"
+# fields <- DBI::dbListFields(con, "table_df")
+# print(fields)
+# # Lie les données à la connexion pour les manipuler avec dplyr
+# db <- tbl(con, "table_df")
+# DBI::dbDisconnect(con, shutdown = TRUE)
+
+
+con <- DBI::dbConnect(duckdb::duckdb(dbdir = "dbz.duckdb"))
+# Lie les données à la connexion pour les manipuler avec dplyr
+db <- tbl(con, "table_df")
+
+
+
+grouped_species <- db %>%
+  select(GENUS, TAXON) %>%
+  distinct() %>%
+  group_by(GENUS) %>%
+  summarize(species = list(TAXON)) %>%
+  collect()
+
+
+
+
+species_choices <- setNames(grouped_species$species, grouped_species$GENUS)
 
 # Générer les choix pour le menu déroulant
 #menuDeroulant <- na.omit(df[c("GENUS", "TAXON")])
 #genus_choices <- unique(df[c("GENUS", "TAXON")]) 
-grouped_species <- df %>% 
-  group_by(GENUS) %>% 
-  summarize(species = list(unique(TAXON)))
 
-species_choices <- setNames(grouped_species$species, grouped_species$GENUS)
+# grouped_species <- df %>% 
+#   group_by(GENUS) %>% 
+#   summarize(species = list(unique(TAXON)))
+# species_choices <- setNames(grouped_species$species, grouped_species$GENUS)
 
-
-
-
-species_choices <- setNames(grouped_species$species, grouped_species$GENUS)
 
 
 
@@ -153,9 +196,12 @@ server <- shinyServer(function(input, output, session) {
     req(input$selectSpecies)  # S'assurer qu'une sélection est faite
     species <- input$selectSpecies
     # Charger uniquement les données pour l'espèce sélectionnée
-    subset_data <- subset(df, TAXON == species)
+    subset_data <- db %>% 
+      filter(TAXON == species) %>%
+      collect()  # Collecter les résultats localement
     return(subset_data)
   })
+  
   
   pal <- colorFactor(pal = c("#B22123", "#F19101", "#F3E61F","#7EB02D", "#54784A", "#CCC9C0"), domain = c("CR", "EN", "VU", "NT", "LC", "DD"))
   
@@ -273,9 +319,12 @@ server <- shinyServer(function(input, output, session) {
     extensions = 'Buttons',options = list(ordering = FALSE, searching = FALSE, pageLength = 25),
     filter = "top" # Activer la recherche par colonne
   ))
+  
+  # Déconnexion de la base de données
+  onStop(function() {
+    DBI::dbDisconnect(con, shutdown = TRUE)
+  })
  
-  
-  
   
 })
 
@@ -283,3 +332,5 @@ server <- shinyServer(function(input, output, session) {
 # Launch ShinyApp ----
 # Lancer l'application Shiny
 shinyApp(ui = ui, server = server)
+
+
