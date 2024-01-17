@@ -307,9 +307,51 @@ server <- shinyServer(function(input, output, session) {
     print(paste("Temps pour afficher la carte:", round(as.numeric(elapsed_time), 2), "secondes"))
   })
   
+  selected_columns <- c(
+    #ID
+    "VALIDATION_TAXONOMIST", 
+    "REFERENCE_CODE",
+    "PRIVACY",
+    
+    #SPECIES
+    "TAXON", 
+    #"SUBSPECIES",
+    "NUMBER_OF_SPECIMENS_2", 
+    #"NUMBER_OF_SPECIMENS_1", 
+    "SEX",
+    "COLLECTOR", 
+    "DETERMINATOR", 
+    "VALIDATOR",
+    "DATA_PROVIDER",
+    "DATA_SOURCE",
+    "DATABASE_REFERENCE_CODE",
+    #"LITERATURE_REFERENCE",
+    #"SPECIES_MEMO",
+    
+    #CONDITION
+    "YEAR_2",
+    "MONTH_2",
+    "DAY_2",
+    #"YEAR_1",
+    #"MONTH_1",
+    #"DAY_1",
+    "PLANT_TAXA",
+    "COLLECTING_METHOD",
+    #"CONDITION_MEMO",
+    
+    #STATION
+    "COUNTRY",
+    #"LATITUDE_PRIVACY",
+    #"LONGITUDE_PRIVACY",
+    #"PRECISION_2", 
+    #"PRECISION_1",
+    "ORIGINAL_COORDINATES"
+    #"STATION_MEMO")
+  )
+  
   ## Data Table ----  
   output$beeData <-DT::renderDataTable(datatable(
-    select(filteredData(), -popup),
+    select(filteredData(), all_of(selected_columns)),
     extensions = 'Buttons',options = list(ordering = FALSE, searching = TRUE, pageLength = 11, scrollX = TRUE),
     filter = "top" # Activer la recherche par colonne
   ))
